@@ -2,110 +2,139 @@
 from encoding import encode_instruction
 import sys
 import os
+from dataclasses import dataclass
+from enum import Enum
 
 
-def parse_text_segment(lines: list[str], data: dict) -> str:
+class Directive(Enum):
+    text = "text"
+    data = "data"
+
+@dataclass
+class Instruction:
+    line: str
+    line_num: int
+    
+def parse_data_segment(instructions: list[Instruction], start_index: int) -> tuple[list[str], dict]:
+    
+    target_lookup = {}
+    data_lines = []
+    
+    for i, inst in enumerate(instructions):
+        
+        if ":" not in inst.line:
+            print(f"LINE {inst.line_num} | SYNTAX ERROR: data instructions must be of the following format -> label : value")
+            exit(1)
+            
+        label, value = [x.strip() for x in inst.line.split(':')]
+        
+        target_lookup[label] = str(start_index + i)
+        
+        ### TODO: Add Arrays
+        
+        if value.isdigit():
+            value = hex(int(value))
+            
+        if value.startswith("0x"):
+            if len(value) > 6:
+                print(f"LINE {inst.line_num} | SYNTAX ERROR: number too big")
+            elif len(value) < 6:
+                value = "0" * (6 - len(value)) + value[2:]
+            else:
+                value = value[2:]
+        else:
+            print(f"LINE {inst.line_num} | SYNTAX ERROR: data instructions must be of the following format -> label : value")
+            exit(1)
+            
+        data_lines.append(value)
+        
+    return data_lines, target_lookup
+
+
+def parse_text_segment(instructions: list[Instruction], target_lookup: dict) -> list[str]:
     result = []
     
-    for line in lines:
-        print(f'LINE: {line}')
-    
-        if line == 'quit':
+    for inst in instructions:
+        if inst.line == 'quit':
             result.append('F000')
             break
         
-        op, params_str = line.split(" ", 1)  
+        op, params_str = inst.line.split(" ", 1)  
         
         params = []  
         
         for arg in params_str.split(","):
             arg = arg.strip()
-            if arg in data:
-                arg = data[arg]
+            if arg in target_lookup:
+                arg = target_lookup[arg]
                 
             if arg.isdigit():
                 arg = hex(int(arg))
+            if arg.startswith('0x'):
+                arg = arg[2:].upper()
                 
             params.append(arg)
             
-        encoded = encode_instruction(op, params)
-        
-        if encoded:
-            result.append(encoded)
-        else:
-            print(f"SYNTAX ERROR: Could not parse '{line}'")
+        try:
+            result.append(encode_instruction(op, params))
+        except SyntaxError as e:
+            print(f"LINE {inst.line_num} | {e}")
             exit(1)
-    
-    return "\n".join(result)
-
-
-def parse_data_segment(lines: list[str]) -> dict:
-    
-    data = {}
-    
-    for line in lines:
-        line = line.split('//')[0].strip()
-        
-        if ":" not in line:
-            print("SYNTAX ERROR: data instructions must be of the following format -> label : value")
             
-        label, value = line.split(':')
-        
-        data[label.strip()] = value.strip()
-        
-    return data
+    return result
 
 
-def parse_asm_file(input_file: str):
+def get_instructions(input_file: str):
+    
+    data_instructions: list[Instruction] = []
+    text_instructions: list[Instruction] = []
+    
+    current_directive: Directive | None = None
+    
     with open(input_file, "r") as f:
-        lines = [line.strip() for line in f.readlines() ]
-        
-    # TODO: implement the ability to make arrays in data
-    # TODO: implement /**/ comments
-    
-    result = ""
-    line_number = 0
-    data_index = -1
-    text_index = -1
+        for i, line in enumerate(f.readlines()):
+            line_num: int = i+1
+            line: str = line.split('//')[0].strip()
+            
+            # TODO: implement /**/ comments
+            if line == "":
+                continue
+            
+            if line == ".text":
+                current_directive = Directive.text   
+                continue 
+            elif line == ".data":
+                current_directive = Directive.data
+                continue
+                
+            if current_directive == Directive.text:
+                ### TODO: add line jumps
+                text_instructions.append(Instruction(line, line_num))
+            elif current_directive == Directive.data:
+                data_instructions.append(Instruction(line, line_num))
+                
+    return data_instructions, text_instructions
 
-    #clean and find .text and .data directives
-    while line_number < len(lines):
-        line = lines[line_number]
-        
-        if line.startswith('//') or line == "":
-            lines.pop(line_number)
-            continue
-        
-        if line == '.data':
-            data_index = line_number   
-        if line == '.text': 
-            text_index = line_number
-            
-        line_number += 1
-            
-    if text_index == -1:
-        print("SYNTAX ERROR: could not find .text directive")
-        exit(1)
+def write_to_file(output_file: str, text_code: list[str], data_code: list[str]):
     
+    def address_to_str(address: str):
+        return "@" + "0" * (4 - len(hex(address)[2:])) + hex(address)[2:].upper()
     
-    if data_index == -1: #no data segment
-        data = {}
-        text_segment = lines[text_index + 1:]
+    address = 0
+    
+    with open(output_file, "w") as f:
+        print("// .text", file=f)
         
-    else:
+        for line in text_code:
+            print(address_to_str(address), line, file=f)
+            address += 1
         
-        if data_index < text_index: #data before text
-            data = parse_data_segment(lines[data_index + 1 :text_index])
-            text_segment = lines[text_index + 1 :]
-        else: #text before data
-            data = parse_data_segment(lines[data_index + 1 :])
-            text_segment = lines[text_index + 1 :data_index]
+        print("\n// .data", file=f)
+        for line in data_code:
+            print(address_to_str(address), line, file=f)
+            address += 1
             
-    print("TEXT SEGMENT: ", text_segment)
-    print("DATA: ", data)
-    return parse_text_segment(text_segment, data)
-      
-
+            
 def main(args=sys.argv[1:]):
     
     if not args:
@@ -125,10 +154,14 @@ def main(args=sys.argv[1:]):
         print(f"ERROR: file {input_file} does not exist")
     
     
-    result = parse_asm_file(input_file)
-    return
-    with open(output_file, "w") as f:
-        f.write(result)
+    data, text = get_instructions(input_file)
+    
+    data_code, target_lookup = parse_data_segment(data, len(text))
+    
+    text_code = parse_text_segment(text, target_lookup)
+    
+    write_to_file(output_file, text_code, data_code)
+    
     
 if __name__ == '__main__':
     main()
