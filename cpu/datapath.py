@@ -63,7 +63,7 @@ class Datapath:
             "MEM_LD": self.memory_load,
             "MEM_ST": self.memory_store,
             "WB_ALU": self.alu_writeback,
-            "WB_LOAD": self.load_writeback,
+            "WB_LD": self.load_writeback,
             "WB_JAL": self.jal_writeback,
             "EX_QUIT": self.ex_quit
         }
@@ -123,7 +123,7 @@ class Datapath:
     def memory_store(self) -> None:
         self.memory[self.f] = self.a
         self.pc += 1
-        self.debug = f"M[{hex(self.f)[2:]}] = {hex(self.a)} ({self.a})"
+        self.debug = f"M[{'0' * (4 - len(hex(self.f)[2:])) + hex(self.f)[2:].upper()}] = {hex(self.a)} ({self.a})"
     
     def alu_writeback(self) -> None:
         self.registers[self.wb] = self.f

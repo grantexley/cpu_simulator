@@ -24,13 +24,13 @@ class Controller:
             15: "EX_QUIT"
         }
         
-        def bz_decision():
+        def bz_decision(zero):
             if zero:
                 return "BR_TAKE"
             else:
                 return "BR_NOT"
             
-        def bn_decision():
+        def bn_decision(neg):
             if neg:
                 return "BR_TAKE"
             else:
@@ -50,8 +50,8 @@ class Controller:
             "EX_LD": "MEM_LD",
             "EX_ST": "MEM_ST",
             "EX_BR": "IFETCH",
-            "EX_BZ": bz_decision(),
-            "EX_BN": bn_decision(),
+            "EX_BZ": bz_decision(zero),
+            "EX_BN": bn_decision(neg),
             "EX_JAL": "WB_JAL",
             "EX_JR": "IFETCH",
             "EX_QUIT": "EX_QUIT",
@@ -63,5 +63,5 @@ class Controller:
             "BR_TAKE": "IFETCH",
             "BR_NOT": "IFETCH"
         }
-        print('next_state', next_state[self.state])
+        
         self.state = next_state[self.state]
